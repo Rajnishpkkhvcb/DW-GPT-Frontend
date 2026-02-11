@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Message = {
   role: "user" | "assistant";
@@ -19,112 +19,121 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
+  // Show initial loader for 3 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setInitialLoading(false);
+    }, 2000);
 
-const sendMessage = async () => {
-  if (!input.trim()) return;
+    return () => clearTimeout(timer);
+  }, []);
 
-  const userText = input;
+  const sendMessage = async () => {
+    if (!input.trim()) return;
 
-  setMessages((prev) => [...prev, { role: "user", content: userText }]);
-  setInput("");
-  setLoading(true);
+    const userText = input;
 
-  try {
-    const res = await fetch("http://localhost:3002/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: userText,
-        conversationId 
-      }),
-    });
+    setMessages((prev) => [...prev, { role: "user", content: userText }]);
+    setInput("");
+    setLoading(true);
 
-    const result = await res.json();
+    try {
+      const res = await fetch("http://localhost:3002/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userText,
+          conversationId 
+        }),
+      });
 
-    if (!result.ok) {
-      throw new Error(result.error || "Failed to process request");
-    }
+      const result = await res.json();
 
-    // Save conversation ID for next message
-    if (result.conversationId) {
-      setConversationId(result.conversationId);
-    }
-
-    const { intent, data, aiResponse } = result;
-
-    let responseContent = "";
-    let responseData = undefined;
-
-    // Handle different response types
-    if (data) {
-      if (data.type === "shipments") {
-        responseContent = aiResponse || `Found ${data.count} shipment(s). ${
-          data.count === 0 ? "Try adjusting your filters." : "Showing records below 👇"
-        }`;
-        responseData = data.records;
-      } 
-      else if (data.type === "tasks") {
-        responseContent = aiResponse || `Found ${data.count} task(s). ${
-          data.count === 0 ? "No tasks found." : "Showing records below 👇"
-        }`;
-        responseData = data.records;
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to process request");
       }
-      else if (data.type === "insights") {
-        // AI-generated insights and analysis
-        responseContent = data.response;
-        
-        // Optionally show what data was used
-        if (data.dataUsed) {
-          const dataInfo = [];
-          if (data.dataUsed.shipments > 0) {
-            dataInfo.push(`${data.dataUsed.shipments} shipments`);
-          }
-          if (data.dataUsed.tasks > 0) {
-            dataInfo.push(`${data.dataUsed.tasks} tasks`);
-          }
+
+      // Save conversation ID for next message
+      if (result.conversationId) {
+        setConversationId(result.conversationId);
+      }
+
+      const { intent, data, aiResponse } = result;
+
+      let responseContent = "";
+      let responseData = undefined;
+
+      // Handle different response types
+      if (data) {
+        if (data.type === "shipments") {
+          responseContent = aiResponse || `Found ${data.count} shipment(s). ${
+            data.count === 0 ? "Try adjusting your filters." : "Showing records below 👇"
+          }`;
+          responseData = data.records;
+        } 
+        else if (data.type === "tasks") {
+          responseContent = aiResponse || `Found ${data.count} task(s). ${
+            data.count === 0 ? "No tasks found." : "Showing records below 👇"
+          }`;
+          responseData = data.records;
+        }
+        else if (data.type === "insights") {
+          // AI-generated insights and analysis
+          responseContent = data.response;
           
-          if (dataInfo.length > 0) {
-            responseContent += `\n\n📊 Analysis based on: ${dataInfo.join(', ')}`;
+          // Optionally show what data was used
+          if (data.dataUsed) {
+            const dataInfo = [];
+            if (data.dataUsed.shipments > 0) {
+              dataInfo.push(`${data.dataUsed.shipments} shipments`);
+            }
+            if (data.dataUsed.tasks > 0) {
+              dataInfo.push(`${data.dataUsed.tasks} tasks`);
+            }
+            
+            if (dataInfo.length > 0) {
+              responseContent += `\n\n📊 Analysis based on: ${dataInfo.join(', ')}`;
+            }
           }
         }
+      } else {
+        responseContent = aiResponse || "✅ I understood your request. Processing...";
       }
-    } else {
-      responseContent = aiResponse || "✅ I understood your request. Processing...";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: responseContent,
+          data: responseData,
+          intent: intent,
+        },
+      ]);
+    } catch (err) {
+      console.error("Chat error:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `❌ Failed to process your request. ${
+            err instanceof Error ? err.message : "Please try again."
+          }`,
+        },
+      ]);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: responseContent,
-        data: responseData,
-        intent: intent,
-      },
-    ]);
-  } catch (err) {
-    console.error("Chat error:", err);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: `❌ Failed to process your request. ${
-          err instanceof Error ? err.message : "Please try again."
-        }`,
-      },
-    ]);
-  } finally {
-    setLoading(false);
-  }
-};
-
-// Optional: Add a function to clear conversation history
-const clearConversation = () => {
-  setMessages([]);
-  setConversationId(null);
-};
+  // Optional: Add a function to clear conversation history
+  const clearConversation = () => {
+    setMessages([]);
+    setConversationId(null);
+  };
 
   const downloadExcel = (data: any[]) => {
     if (!data || data.length === 0) return;
@@ -157,6 +166,21 @@ const clearConversation = () => {
     link.click();
     document.body.removeChild(link);
   };
+
+  // Initial Loading Screen
+  if (initialLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="text-center">
+          <div className="mb-6">
+            <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Loading your AI Chatbot</h1>
+          <p className="text-gray-400">Preparing DW-GPT...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen">
@@ -221,7 +245,6 @@ const clearConversation = () => {
                       {msg.data.length} record(s)
                     </p>
                     <button
-                      // onClick={() => downloadExcel(msg.data)}
                       onClick={() => downloadExcel(msg.data || [])}
                       className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
                     >
